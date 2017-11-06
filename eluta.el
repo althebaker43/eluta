@@ -29,10 +29,12 @@
 
 (defun simulate (system-state instr-mem data-mem)
   "Simulates a RISC-V system."
-  (while (get-current-instr system-state instr-mem)
-    (let ((current-instr (get-current-instr system-state instr-mem)))
-	 (funcall (car current-instr) (cdr current-instr) system-state))
-    (incr-pc system-state)))
+  (catch 'ECALL
+    (catch 'EBREAK
+      (while (get-current-instr system-state instr-mem)
+	(let ((current-instr (get-current-instr system-state instr-mem)))
+	  (funcall (car current-instr) (cdr current-instr) system-state))
+	(incr-pc system-state)))))
 
 
 (defun OP-IMM (args system-state)
@@ -46,6 +48,23 @@
 (defun ANDI (system-state dest src imm)
   "Implementation for AND instruction with immediate value."
   (set-data-reg system-state dest (logand (get-data-reg system-state src) imm)))
+
+
+(defun SYSTEM (args system-state)
+  "Implementation for control, status, and debugging instructions."
+  (apply (car args) system-state (cdr args)))
+
+(defun PRIV (system-state fun)
+  "Implementation for priviledged instructions."
+  (funcall fun))
+
+(defun ECALL ()
+  "Implementation of ECALL instruction."
+  (throw 'ECALL t))
+
+(defun EBREAK ()
+  "Implementation of EBREAK instruction."
+  (throw 'EBREAK t))
 
 
 (defun read-buffer-instructions (instr-buffer)
@@ -66,6 +85,8 @@
   (let ((instr-hash (make-hash-table :test 'str-test)))
     (puthash "addi" 'read-addi instr-hash)
     (puthash "andi" 'read-andi instr-hash)
+    (puthash "ecall" 'read-ecall instr-hash)
+    (puthash "ebreak" 'read-ebreak instr-hash)
     instr-hash))
 ;;  #s(hash-table test 'str-test data ("addi" 'read-addi)))
 
@@ -98,6 +119,16 @@
     (forward-word)
     (setq imm (string-to-number (current-word)))
     (list op-type func-type dest-reg src-reg imm)))
+
+(defun read-ecall ()
+  "Reads an ECALL instruction from the current buffer."
+  (forward-word)
+  (list 'SYSTEM 'PRIV 'ECALL))
+
+(defun read-ebreak ()
+  "Reads an EBREAK instruction from the current buffer."
+  (forward-word)
+  (list 'SYSTEM 'PRIV 'EBREAK))
 
 (ert-deftest test-pc ()
   "Tests that the PC is incremented."
@@ -139,6 +170,26 @@
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 4 (get-data-reg system-state 1)))))
 
+(ert-deftest test-ecall ()
+  "Tests that ECALL works."
+  (let ((system-state (cons (make-vector 32 '(0)) '(0)))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(SYSTEM PRIV ECALL) instr-mem-hash)
+    (puthash 4 '(OP-IMM ANDI 0 0 0) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 0 (get-pc system-state)))))
+
+(ert-deftest test-ebreak ()
+  "Tests that EBREAK works."
+  (let ((system-state (cons (make-vector 32 '(0)) '(0)))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (puthash 4 '(OP-IMM ANDI 0 0 0) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 0 (get-pc system-state)))))
+
 (ert-deftest test-read-addi ()
   "Tests that an ADDI instruction can be read."
   (let ((instr-buf (get-buffer-create "*riscv-test*"))
@@ -176,3 +227,25 @@
     (setq instrs (read-buffer-instructions instr-buf))
     (kill-buffer instr-buf)
     (should (equal (list '(OP-IMM ANDI 1 1 5)) instrs))))
+
+(ert-deftest test-read-ecall ()
+  "Tests that an ECALL instruction can be read."
+  (let ((instr-buf (get-buffer-create "*riscv-test*"))
+	(instrs))
+    (save-excursion
+      (set-buffer instr-buf)
+      (insert "ecall"))
+    (setq instrs (read-buffer-instructions instr-buf))
+    (kill-buffer instr-buf)
+    (should (equal (list '(SYSTEM PRIV ECALL)) instrs))))
+
+(ert-deftest test-read-ebreak ()
+  "Tests that an EBREAK instruction can be read."
+  (let ((instr-buf (get-buffer-create "*riscv-test*"))
+	(instrs))
+    (save-excursion
+      (set-buffer instr-buf)
+      (insert "ebreak"))
+    (setq instrs (read-buffer-instructions instr-buf))
+    (kill-buffer instr-buf)
+    (should (equal (list '(SYSTEM PRIV EBREAK)) instrs))))
