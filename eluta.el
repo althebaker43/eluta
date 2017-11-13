@@ -133,6 +133,9 @@
     (puthash "csrrsi" 'read-csrrsi instr-hash)
     (puthash "csrrc" 'read-csrrc instr-hash)
     (puthash "csrrci" 'read-csrrci instr-hash)
+    (puthash "rdcycle" 'read-rdcycle instr-hash)
+    (puthash "rdtime" 'read-rdtime instr-hash)
+    (puthash "rdinstret" 'read-rdinstret instr-hash)
     instr-hash))
 ;;  #s(hash-table test 'str-test data ("addi" 'read-addi)))
 
@@ -266,6 +269,39 @@
     (setq csr-addr (string-to-number (current-word)))
     (list op-type func-type dest-reg src-val csr-addr)))
 
+(defun read-rdcycle ()
+  "Reads a Read Cycles instruction from the current buffer."
+  (forward-word)
+  (let ((op-type 'SYSTEM)
+	(func-type 'CSRRS)
+	(dest-reg 0)
+	(src-reg 0)
+	(csr-addr 0))
+    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (list op-type func-type dest-reg src-reg csr-addr)))
+
+(defun read-rdtime ()
+  "Reads a Read Cycles instruction from the current buffer."
+  (forward-word)
+  (let ((op-type 'SYSTEM)
+	(func-type 'CSRRS)
+	(dest-reg 0)
+	(src-reg 0)
+	(csr-addr 1))
+    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (list op-type func-type dest-reg src-reg csr-addr)))
+
+(defun read-rdinstret ()
+  "Reads a Read Instructions Retired instruction from the current buffer."
+  (forward-word)
+  (let ((op-type 'SYSTEM)
+	(func-type 'CSRRS)
+	(dest-reg 0)
+	(src-reg 0)
+	(csr-addr 2))
+    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (list op-type func-type dest-reg src-reg csr-addr)))
+
 
 (defun make-zeroed-system-state ()
   "Initializes system state with all registers and memory locations set to zero."
@@ -396,7 +432,6 @@
     (should (equal 4 (get-csr system-state 0)))
     (should (equal 4 (get-data-reg system-state 2)))))
 
-
 (ert-deftest test-read-addi ()
   "Tests that an ADDI instruction can be read."
   (let ((instr-buf (get-buffer-create "*riscv-test*"))
@@ -512,7 +547,6 @@
     (kill-buffer instr-buf)
     (should (equal (list '(SYSTEM CSRRC 3 5 3)) instrs))))
 
-
 (ert-deftest test-read-csrrci ()
   "Tests that a CSR Read-Clear with Immediate instruction can be read."
   (let ((instr-buf (get-buffer-create "*riscv-test*"))
@@ -523,3 +557,36 @@
     (setq instrs (read-buffer-instructions instr-buf))
     (kill-buffer instr-buf)
     (should (equal (list '(SYSTEM CSRRCI 3 5 3)) instrs))))
+
+(ert-deftest test-read-rdcycle ()
+  "Tests that a Read Cycles instruction can be read."
+  (let ((instr-buf (get-buffer-create "*riscv-test*"))
+	(instrs))
+    (save-excursion
+      (set-buffer instr-buf)
+      (insert "rdcycle x3"))
+    (setq instrs (read-buffer-instructions instr-buf))
+    (kill-buffer instr-buf)
+    (should (equal (list '(SYSTEM CSRRS 3 0 0)) instrs))))
+
+(ert-deftest test-read-rdtime ()
+  "Tests that a Read Time instruction can be read."
+  (let ((instr-buf (get-buffer-create "*riscv-test*"))
+	(instrs))
+    (save-excursion
+      (set-buffer instr-buf)
+      (insert "rdtime x5"))
+    (setq instrs (read-buffer-instructions instr-buf))
+    (kill-buffer instr-buf)
+    (should (equal (list '(SYSTEM CSRRS 5 0 1)) instrs))))
+
+(ert-deftest test-read-rdinstret ()
+  "Tests that a Read Instructions Retired instruction can be read."
+  (let ((instr-buf (get-buffer-create "*riscv-test*"))
+	(instrs))
+    (save-excursion
+      (set-buffer instr-buf)
+      (insert "rdinstret x2"))
+    (setq instrs (read-buffer-instructions instr-buf))
+    (kill-buffer instr-buf)
+    (should (equal (list '(SYSTEM CSRRS 2 0 2)) instrs))))
