@@ -50,7 +50,7 @@
 
 
 (defun OP-IMM (args system-state)
-  "Implemenation for arithmetic instruction with immediate value."
+  "Implementation for arithmetic instruction with immediate value."
   (apply (car args) system-state (cdr args)))
 
 (defun ADDI (system-state dest src imm)
@@ -74,6 +74,30 @@
 	(offset (nth 2 args)))
     (incr-pc system-state (+ offset (get-data-reg system-state base-reg)))
     (set-data-reg system-state (car args) (+ (get-pc system-state) 4))))
+
+(defun BRANCH (args system-state)
+  "Implementation for conditional branching instructions."
+  (apply (car args) system-state (cdr args)))
+
+(defun BEQ (system-state src1 src2 offset)
+  "Implementation for Branch if Equal instruction."
+  (if (equal (get-data-reg system-state src1) (get-data-reg system-state src2))
+      (incr-pc system-state offset)))
+
+(defun BNE (system-state src1 src2 offset)
+  "Implementation for Branch if Not Equal instruction."
+  (if (not (equal (get-data-reg system-state src1) (get-data-reg system-state src2)))
+      (incr-pc system-state offset)))
+
+(defun BLT (system-state src1 src2 offset)
+  "Implementation for Branch if Less Than instruction."
+  (if (< (get-data-reg system-state src1) (get-data-reg system-state src2))
+      (incr-pc system-state offset)))
+
+(defun BGE (system-state src1 src2 offset)
+  "Implementation for Branch if Greater Than or Equal instruction."
+  (if (>= (get-data-reg system-state src1) (get-data-reg system-state src2))
+      (incr-pc system-state offset)))
 
 
 (defun SYSTEM (args system-state)
@@ -143,6 +167,10 @@
     (puthash "andi" 'read-andi instr-hash)
     (puthash "jal" 'read-jal instr-hash)
     (puthash "jalr" 'read-jalr instr-hash)
+    (puthash "beq" 'read-beq instr-hash)
+    (puthash "bne" 'read-bne instr-hash)
+    (puthash "blt" 'read-blt instr-hash)
+    (puthash "bge" 'read-bge instr-hash)
     (puthash "ecall" 'read-ecall instr-hash)
     (puthash "ebreak" 'read-ebreak instr-hash)
     (puthash "csrrw" 'read-csrrw instr-hash)
@@ -211,6 +239,66 @@
     (forward-word)
     (setq offset (string-to-number (current-word)))
     (list op-type dest-reg base-reg offset)))
+
+(defun read-beq ()
+  "Read a Branch if Equal instruction from the current buffer."
+  (forward-word)
+  (let ((op-type 'BRANCH)
+	(func-type 'BEQ)
+	(src1-reg 0)
+	(src2-reg 0)
+	(offset 0))
+    (setq src1-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq src2-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq offset (string-to-number (current-word)))
+    (list op-type func-type src1-reg src2-reg offset)))
+
+(defun read-bne ()
+  "Read a Branch if Not Equal instruction from the current buffer."
+  (forward-word)
+  (let ((op-type 'BRANCH)
+	(func-type 'BNE)
+	(src1-reg 0)
+	(src2-reg 0)
+	(offset 0))
+    (setq src1-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq src2-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq offset (string-to-number (current-word)))
+    (list op-type func-type src1-reg src2-reg offset)))
+
+(defun read-blt ()
+  "Read a Branch if Less Than instruction from the current buffer."
+  (forward-word)
+  (let ((op-type 'BRANCH)
+	(func-type 'BLT)
+	(src1-reg 0)
+	(src2-reg 0)
+	(offset 0))
+    (setq src1-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq src2-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq offset (string-to-number (current-word)))
+    (list op-type func-type src1-reg src2-reg offset)))
+
+(defun read-bge ()
+  "Read a Branch if Greater Than or Equal instruction from the current buffer."
+  (forward-word)
+  (let ((op-type 'BRANCH)
+	(func-type 'BGE)
+	(src1-reg 0)
+	(src2-reg 0)
+	(offset 0))
+    (setq src1-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq src2-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq offset (string-to-number (current-word)))
+    (list op-type func-type src1-reg src2-reg offset)))
 
 (defun read-ecall ()
   "Reads an ECALL instruction from the current buffer."
@@ -498,6 +586,94 @@
     (should (equal 8 (get-pc system-state)))
     (should (equal 8 (get-data-reg system-state 1)))))
 
+(ert-deftest test-beq ()
+  "Tests that Branch if Equal works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BEQ 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 8 (get-pc system-state))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BEQ 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (set-data-reg system-state 1 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 4 (get-pc system-state)))))
+
+(ert-deftest test-bne ()
+  "Tests that Branch if Not Equal works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BNE 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 4 (get-pc system-state))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BNE 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (set-data-reg system-state 1 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 8 (get-pc system-state)))))
+
+(ert-deftest test-blt ()
+  "Tests that Branch if Less Than works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BLT 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 4 (get-pc system-state))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BLT 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (set-data-reg system-state 1 -1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 4 (get-pc system-state))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BLT 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (set-data-reg system-state 1 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 8 (get-pc system-state)))))
+
+(ert-deftest test-bge ()
+  "Tests that Branch if Greater Than or Equal works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BGE 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 8 (get-pc system-state))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BGE 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (set-data-reg system-state 1 -1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 8 (get-pc system-state))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(BRANCH BGE 0 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (set-data-reg system-state 1 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 4 (get-pc system-state)))))
+
 (defun read-tmp-instruction (instr)
   "Writes the given instruction string to a temporary buffer and returns the instruction symbols."
   (let ((instr-buf (get-buffer-create "*riscv-test*"))
@@ -568,5 +744,21 @@
   (should (equal (list '(JAL 4 8)) (read-tmp-instruction "jal x4, 8"))))
 
 (ert-deftest test-read-jalr ()
-  "Tests taht a Jump and Link Relative instruction can be read."
+  "Tests that a Jump and Link Relative instruction can be read."
   (should (equal (list '(JALR 4 7 16)) (read-tmp-instruction "jalr x4, x7, 16"))))
+
+(ert-deftest test-read-beq ()
+  "Tests that a Branch if Equal instruction can be read."
+  (should (equal (list '(BRANCH BEQ 0 1 4)) (read-tmp-instruction "beq x0, x1, 4"))))
+
+(ert-deftest test-read-bne ()
+  "Tests that a Branch if Not Equal instruction can be read."
+  (should (equal (list '(BRANCH BNE 3 4 8)) (read-tmp-instruction "bne x3, x4, 8"))))
+
+(ert-deftest test-read-blt ()
+  "Tests that a Branch if Less Than instruction can be read."
+  (should (equal (list '(BRANCH BLT 6 12 8)) (read-tmp-instruction "blt x6, x12, 8"))))
+
+(ert-deftest test-read-bge ()
+  "Tests that a Branch if Greater Than or Equal instruction can be read."
+  (should (equal (list '(BRANCH BGE 6 7 -4)) (read-tmp-instruction "bge x6, x7, -4"))))
