@@ -11,9 +11,11 @@
   "Get the Program Counter from the system state structure."
   (car (nth 1 system-state)))
 
-(defun incr-pc (system-state)
+(defun incr-pc (system-state &optional val)
   "Increments the Program Counter from the system state structure."
-  (setcar (cdr system-state) (list (+ (get-pc system-state) 4))))
+  (if val
+      (setcar (cdr system-state) (list (+ (get-pc system-state) val)))
+    (setcar (cdr system-state) (list (+ (get-pc system-state) 4)))))
 
 (defun get-data-reg (system-state idx)
   "Returns the current value stored in the data register at the given index."
@@ -60,6 +62,20 @@
   (set-data-reg system-state dest (logand (get-data-reg system-state src) imm)))
 
 
+(defun JAL (args system-state)
+  "Implementation of Jump and Link instruction."
+  (incr-pc system-state (nth 1 args))
+  (set-data-reg system-state (car args) (+ (get-pc system-state) 4)))
+
+(defun JALR (args system-state)
+  "Implementation of Jump and Link Relative instruction."
+  (let ((dest-reg (car args))
+	(base-reg (nth 1 args))
+	(offset (nth 2 args)))
+    (incr-pc system-state (+ offset (get-data-reg system-state base-reg)))
+    (set-data-reg system-state (car args) (+ (get-pc system-state) 4))))
+
+
 (defun SYSTEM (args system-state)
   "Implementation for control, status, and debugging instructions."
   (apply (car args) system-state (cdr args)))
@@ -87,22 +103,22 @@
   (set-csr system-state addr src))
 
 (defun CSRRS (system-state dest src addr)
-  "Implemenation of CSR Read-Set instruction."
+  "Implementation of CSR Read-Set instruction."
   (set-csr system-state addr (logior (get-csr system-state addr) (get-data-reg system-state src)))
   (set-data-reg system-state dest (get-csr system-state addr)))
 
 (defun CSRRSI (system-state dest src addr)
-  "Implemenation of CSR Read-Set with Immediate instruction."
+  "Implementation of CSR Read-Set with Immediate instruction."
   (set-csr system-state addr (logior (get-csr system-state addr) src))
   (set-data-reg system-state dest (get-csr system-state addr)))
 
 (defun CSRRC (system-state dest src addr)
-  "Implemenation of CSR Read-Clear instruction."
+  "Implementation of CSR Read-Clear instruction."
   (set-csr system-state addr (logand (get-csr system-state addr) (lognot (get-data-reg system-state src))))
   (set-data-reg system-state dest (get-csr system-state addr)))
 
 (defun CSRRCI (system-state dest src addr)
-  "Implemenation of CSR Read-Clear with Immediate instruction."
+  "Implementation of CSR Read-Clear with Immediate instruction."
   (set-csr system-state addr (logand (get-csr system-state addr) (lognot src)))
   (set-data-reg system-state dest (get-csr system-state addr)))
 
@@ -125,6 +141,8 @@
   (let ((instr-hash (make-hash-table :test 'str-test)))
     (puthash "addi" 'read-addi instr-hash)
     (puthash "andi" 'read-andi instr-hash)
+    (puthash "jal" 'read-jal instr-hash)
+    (puthash "jalr" 'read-jalr instr-hash)
     (puthash "ecall" 'read-ecall instr-hash)
     (puthash "ebreak" 'read-ebreak instr-hash)
     (puthash "csrrw" 'read-csrrw instr-hash)
@@ -168,6 +186,31 @@
     (forward-word)
     (setq imm (string-to-number (current-word)))
     (list op-type func-type dest-reg src-reg imm)))
+
+(defun read-jal ()
+  "Read a Jump and Link instruction from the current buffer."
+  (forward-word)
+  (let ((op-type 'JAL)
+	(dest-reg 0)
+	(offset 0))
+    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq offset (string-to-number (current-word)))
+    (list op-type dest-reg offset)))
+
+(defun read-jalr ()
+  "Read a Jump and Link Relative instruction from the current buffer."
+  (forward-word)
+  (let ((op-type 'JALR)
+	(dest-reg 0)
+	(base-reg 0)
+	(offset 0))
+    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq base-reg (string-to-number (substring (current-word) 1)))
+    (forward-word)
+    (setq offset (string-to-number (current-word)))
+    (list op-type dest-reg base-reg offset)))
 
 (defun read-ecall ()
   "Reads an ECALL instruction from the current buffer."
@@ -432,161 +475,98 @@
     (should (equal 4 (get-csr system-state 0)))
     (should (equal 4 (get-data-reg system-state 2)))))
 
+(ert-deftest test-jal ()
+  "Tests that Jump and Link works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(JAL 1 4) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 8 (get-pc system-state)))
+    (should (equal 8 (get-data-reg system-state 1)))))
+
+(ert-deftest test-jalr ()
+  "Tests that Jump and Link works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(JALR 1 2 0) instr-mem-hash)
+    (puthash 4 '(SYSTEM PRIV EBREAK) instr-mem-hash)
+    (set-data-reg system-state 2 4)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 8 (get-pc system-state)))
+    (should (equal 8 (get-data-reg system-state 1)))))
+
+(defun read-tmp-instruction (instr)
+  "Writes the given instruction string to a temporary buffer and returns the instruction symbols."
+  (let ((instr-buf (get-buffer-create "*riscv-test*"))
+	(instrs))
+    (save-excursion
+      (set-buffer instr-buf)
+      (insert instr))
+    (setq instrs (read-buffer-instructions instr-buf))
+    (kill-buffer instr-buf)
+    instrs))
+
 (ert-deftest test-read-addi ()
   "Tests that an ADDI instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "addi x1, x0, 0"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(OP-IMM ADDI 1 0 0)) instrs)))
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "addi x1, x0, 1"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(OP-IMM ADDI 1 0 1)) instrs)))
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "addi x22, x15, 256"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(OP-IMM ADDI 22 15 256)) instrs))))
+  (should (equal (list '(OP-IMM ADDI 1 0 0)) (read-tmp-instruction "addi x1, x0, 0")))
+  (should (equal (list '(OP-IMM ADDI 1 0 1)) (read-tmp-instruction "addi x1, x0, 1")))
+  (should (equal (list '(OP-IMM ADDI 22 15 256)) (read-tmp-instruction "addi x22, x15, 256"))))
 
 (ert-deftest test-read-andi ()
   "Tests that an ANDI instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "andi x1, x1, 5"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(OP-IMM ANDI 1 1 5)) instrs))))
+  (should (equal (list '(OP-IMM ANDI 1 1 5)) (read-tmp-instruction "andi x1, x1, 5"))))
 
 (ert-deftest test-read-ecall ()
   "Tests that an ECALL instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "ecall"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM PRIV ECALL)) instrs))))
+  (should (equal (list '(SYSTEM PRIV ECALL)) (read-tmp-instruction "ecall"))))
 
 (ert-deftest test-read-ebreak ()
   "Tests that an EBREAK instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "ebreak"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM PRIV EBREAK)) instrs))))
+  (should (equal (list '(SYSTEM PRIV EBREAK)) (read-tmp-instruction "ebreak"))))
 
 (ert-deftest test-read-csrrw ()
   "Tests that a CSR Read-Write instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "csrrw x2, x1, 0"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM CSRRW 2 1 0)) instrs))))
+  (should (equal (list '(SYSTEM CSRRW 2 1 0)) (read-tmp-instruction "csrrw x2, x1, 0"))))
 
 (ert-deftest test-read-csrrwi ()
   "Tests that a CSR Read-Write with Immediate instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "csrrwi x2, 1, 3"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM CSRRWI 2 1 3)) instrs))))
+  (should (equal (list '(SYSTEM CSRRWI 2 1 3)) (read-tmp-instruction "csrrwi x2, 1, 3"))))
 
 (ert-deftest test-read-csrrs ()
   "Tests that a CSR Read-Set instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "csrrs x2, x1, 4"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM CSRRS 2 1 4)) instrs))))
+  (should (equal (list '(SYSTEM CSRRS 2 1 4)) (read-tmp-instruction "csrrs x2, x1, 4"))))
 
 (ert-deftest test-read-csrrsi ()
   "Tests that a CSR Read-Set with Immediate instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "csrrsi x2, 1, 4"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM CSRRSI 2 1 4)) instrs))))
+  (should (equal (list '(SYSTEM CSRRSI 2 1 4)) (read-tmp-instruction "csrrsi x2, 1, 4"))))
 
 (ert-deftest test-read-csrrc ()
   "Tests that a CSR Read-Clear instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "csrrc x3, x5, 3"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM CSRRC 3 5 3)) instrs))))
+  (should (equal (list '(SYSTEM CSRRC 3 5 3)) (read-tmp-instruction "csrrc x3, x5, 3"))))
 
 (ert-deftest test-read-csrrci ()
   "Tests that a CSR Read-Clear with Immediate instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "csrrci x3, 5, 3"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM CSRRCI 3 5 3)) instrs))))
+  (should (equal (list '(SYSTEM CSRRCI 3 5 3)) (read-tmp-instruction "csrrci x3, 5, 3"))))
 
 (ert-deftest test-read-rdcycle ()
   "Tests that a Read Cycles instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "rdcycle x3"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM CSRRS 3 0 0)) instrs))))
+  (should (equal (list '(SYSTEM CSRRS 3 0 0)) (read-tmp-instruction "rdcycle x3"))))
 
 (ert-deftest test-read-rdtime ()
   "Tests that a Read Time instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "rdtime x5"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM CSRRS 5 0 1)) instrs))))
+  (should (equal (list '(SYSTEM CSRRS 5 0 1)) (read-tmp-instruction "rdtime x5"))))
 
 (ert-deftest test-read-rdinstret ()
   "Tests that a Read Instructions Retired instruction can be read."
-  (let ((instr-buf (get-buffer-create "*riscv-test*"))
-	(instrs))
-    (save-excursion
-      (set-buffer instr-buf)
-      (insert "rdinstret x2"))
-    (setq instrs (read-buffer-instructions instr-buf))
-    (kill-buffer instr-buf)
-    (should (equal (list '(SYSTEM CSRRS 2 0 2)) instrs))))
+  (should (equal (list '(SYSTEM CSRRS 2 0 2)) (read-tmp-instruction "rdinstret x2"))))
+
+(ert-deftest test-read-jal ()
+  "Tests that a Jump and Link instruction can be read."
+  (should (equal (list '(JAL 4 8)) (read-tmp-instruction "jal x4, 8"))))
+
+(ert-deftest test-read-jalr ()
+  "Tests taht a Jump and Link Relative instruction can be read."
+  (should (equal (list '(JALR 4 7 16)) (read-tmp-instruction "jalr x4, x7, 16"))))
