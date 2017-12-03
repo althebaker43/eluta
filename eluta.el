@@ -57,9 +57,21 @@
   "Implementation for addition instruction with immediate value."
   (set-data-reg system-state dest (+ (get-data-reg system-state src) imm)))
 
+(defun SLTI (system-state dest src imm)
+  "Implementation for set-less-than-immediate."
+  (set-data-reg system-state dest (if (< (get-data-reg system-state src) imm) 1 0)))
+
 (defun ANDI (system-state dest src imm)
   "Implementation for AND instruction with immediate value."
   (set-data-reg system-state dest (logand (get-data-reg system-state src) imm)))
+
+(defun ORI (system-state dest src imm)
+  "Implementation for OR instruction with immediate value."
+  (set-data-reg system-state dest (logior (get-data-reg system-state src) imm)))
+
+(defun XORI (system-state dest src imm)
+  "Implementation for XOR instruction with immediate value."
+  (set-data-reg system-state dest (logxor (get-data-reg system-state src) imm)))
 
 
 (defun JAL (args system-state)
@@ -164,7 +176,10 @@
   (define-hash-table-test 'str-test 'string= 'sxhash)
   (let ((instr-hash (make-hash-table :test 'str-test)))
     (puthash "addi" 'read-addi instr-hash)
+    (puthash "slti" 'read-slti instr-hash)
     (puthash "andi" 'read-andi instr-hash)
+    (puthash "ori" 'read-ori instr-hash)
+    (puthash "xori" 'read-xori instr-hash)
     (puthash "jal" 'read-jal instr-hash)
     (puthash "jalr" 'read-jalr instr-hash)
     (puthash "beq" 'read-beq instr-hash)
@@ -185,35 +200,43 @@
     instr-hash))
 ;;  #s(hash-table test 'str-test data ("addi" 'read-addi)))
 
-(defun read-addi ()
-  "Reads an ADDI instruction from the current buffer."
+(defun read-register (word)
+  "Parses the given word and returns an index of a data register."
+  (string-to-number (substring word 1)))
+
+(defun read-int-imm (func-type)
+  "Reads an integer arithmetic with immediate instruction from the current buffer."
   (forward-word)
   (let ((op-type 'OP-IMM)
-	(func-type 'ADDI)
 	(dest-reg 0)
 	(src-reg 0)
 	(imm 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (forward-word)
-    (setq src-reg (string-to-number (substring (current-word) 1)))
+    (setq src-reg (read-register (current-word)))
     (forward-word)
     (setq imm (string-to-number (current-word)))
     (list op-type func-type dest-reg src-reg imm)))
 
+(defun read-addi ()
+  "Reads an ADDI instruction from the current buffer."
+  (read-int-imm 'ADDI))
+
+(defun read-slti ()
+  "Reads a set-less-than-immediate instruction from the current buffer."
+  (read-int-imm 'SLTI))
+
 (defun read-andi ()
   "Reads an ANDI instruction from the current buffer."
-  (forward-word)
-  (let ((op-type 'OP-IMM)
-	(func-type 'ANDI)
-	(dest-reg 0)
-	(src-reg 0)
-	(imm 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
-    (forward-word)
-    (setq src-reg (string-to-number (substring (current-word) 1)))
-    (forward-word)
-    (setq imm (string-to-number (current-word)))
-    (list op-type func-type dest-reg src-reg imm)))
+  (read-int-imm 'ANDI))
+
+(defun read-ori ()
+  "Reads an ORI instruction from the current buffer."
+  (read-int-imm 'ORI))
+
+(defun read-xori ()
+  "Reads an XORI instruction from the current buffer."
+  (read-int-imm 'XORI))
 
 (defun read-jal ()
   "Read a Jump and Link instruction from the current buffer."
@@ -221,7 +244,7 @@
   (let ((op-type 'JAL)
 	(dest-reg 0)
 	(offset 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (forward-word)
     (setq offset (string-to-number (current-word)))
     (list op-type dest-reg offset)))
@@ -233,9 +256,9 @@
 	(dest-reg 0)
 	(base-reg 0)
 	(offset 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (forward-word)
-    (setq base-reg (string-to-number (substring (current-word) 1)))
+    (setq base-reg (read-register (current-word)))
     (forward-word)
     (setq offset (string-to-number (current-word)))
     (list op-type dest-reg base-reg offset)))
@@ -248,9 +271,9 @@
 	(src1-reg 0)
 	(src2-reg 0)
 	(offset 0))
-    (setq src1-reg (string-to-number (substring (current-word) 1)))
+    (setq src1-reg (read-register (current-word)))
     (forward-word)
-    (setq src2-reg (string-to-number (substring (current-word) 1)))
+    (setq src2-reg (read-register (current-word)))
     (forward-word)
     (setq offset (string-to-number (current-word)))
     (list op-type func-type src1-reg src2-reg offset)))
@@ -263,9 +286,9 @@
 	(src1-reg 0)
 	(src2-reg 0)
 	(offset 0))
-    (setq src1-reg (string-to-number (substring (current-word) 1)))
+    (setq src1-reg (read-register (current-word)))
     (forward-word)
-    (setq src2-reg (string-to-number (substring (current-word) 1)))
+    (setq src2-reg (read-register (current-word)))
     (forward-word)
     (setq offset (string-to-number (current-word)))
     (list op-type func-type src1-reg src2-reg offset)))
@@ -278,9 +301,9 @@
 	(src1-reg 0)
 	(src2-reg 0)
 	(offset 0))
-    (setq src1-reg (string-to-number (substring (current-word) 1)))
+    (setq src1-reg (read-register (current-word)))
     (forward-word)
-    (setq src2-reg (string-to-number (substring (current-word) 1)))
+    (setq src2-reg (read-register (current-word)))
     (forward-word)
     (setq offset (string-to-number (current-word)))
     (list op-type func-type src1-reg src2-reg offset)))
@@ -293,9 +316,9 @@
 	(src1-reg 0)
 	(src2-reg 0)
 	(offset 0))
-    (setq src1-reg (string-to-number (substring (current-word) 1)))
+    (setq src1-reg (read-register (current-word)))
     (forward-word)
-    (setq src2-reg (string-to-number (substring (current-word) 1)))
+    (setq src2-reg (read-register (current-word)))
     (forward-word)
     (setq offset (string-to-number (current-word)))
     (list op-type func-type src1-reg src2-reg offset)))
@@ -318,9 +341,9 @@
 	(dest-reg 0)
 	(src-reg 0)
 	(csr-addr 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (forward-word)
-    (setq src-reg (string-to-number (substring (current-word) 1)))
+    (setq src-reg (read-register (current-word)))
     (forward-word)
     (setq csr-addr (string-to-number (current-word)))
     (list op-type func-type dest-reg src-reg csr-addr)))
@@ -333,7 +356,7 @@
 	(dest-reg 0)
 	(src-val 0)
 	(csr-addr 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (forward-word)
     (setq src-val (string-to-number (current-word)))
     (forward-word)
@@ -348,9 +371,9 @@
 	(dest-reg 0)
 	(src-reg 0)
 	(csr-addr 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (forward-word)
-    (setq src-reg (string-to-number (substring (current-word) 1)))
+    (setq src-reg (read-register (current-word)))
     (forward-word)
     (setq csr-addr (string-to-number (current-word)))
     (list op-type func-type dest-reg src-reg csr-addr)))
@@ -363,7 +386,7 @@
 	(dest-reg 0)
 	(src-val 0)
 	(csr-addr 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (forward-word)
     (setq src-val (string-to-number (current-word)))
     (forward-word)
@@ -378,9 +401,9 @@
 	(dest-reg 0)
 	(src-reg 0)
 	(csr-addr 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (forward-word)
-    (setq src-reg (string-to-number (substring (current-word) 1)))
+    (setq src-reg (read-register (current-word)))
     (forward-word)
     (setq csr-addr (string-to-number (current-word)))
     (list op-type func-type dest-reg src-reg csr-addr)))
@@ -393,7 +416,7 @@
 	(dest-reg 0)
 	(src-val 0)
 	(csr-addr 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (forward-word)
     (setq src-val (string-to-number (current-word)))
     (forward-word)
@@ -408,7 +431,7 @@
 	(dest-reg 0)
 	(src-reg 0)
 	(csr-addr 0))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (list op-type func-type dest-reg src-reg csr-addr)))
 
 (defun read-rdtime ()
@@ -419,7 +442,7 @@
 	(dest-reg 0)
 	(src-reg 0)
 	(csr-addr 1))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (list op-type func-type dest-reg src-reg csr-addr)))
 
 (defun read-rdinstret ()
@@ -430,7 +453,7 @@
 	(dest-reg 0)
 	(src-reg 0)
 	(csr-addr 2))
-    (setq dest-reg (string-to-number (substring (current-word) 1)))
+    (setq dest-reg (read-register (current-word)))
     (list op-type func-type dest-reg src-reg csr-addr)))
 
 
@@ -462,6 +485,21 @@
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 8 (get-data-reg system-state 2)))))
 
+(ert-deftest test-slti ()
+  "Tests that Set-Less-Than-Immediate works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM SLTI 1 0 0) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 0 (get-data-reg system-state 1))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM SLTI 1 0 1) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 1 (get-data-reg system-state 1)))))
+
 (ert-deftest test-andi ()
   "Tests that ANDI works."
   (let ((system-state (make-zeroed-system-state))
@@ -477,6 +515,38 @@
     (set-data-reg system-state 1 5)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 4 (get-data-reg system-state 1)))))
+
+(ert-deftest test-ori ()
+  "Tests that ORI works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM ORI 1 0 0) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 0 (get-data-reg system-state 1))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM ORI 1 0 1) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 1 (get-data-reg system-state 1))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM ORI 1 1 3) instr-mem-hash)
+    (set-data-reg system-state 1 5)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 7 (get-data-reg system-state 1)))))
+
+(ert-deftest test-xori ()
+  "Tests that XORI works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM XORI 1 1 3) instr-mem-hash)
+    (set-data-reg system-state 1 5)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 6 (get-data-reg system-state 1)))))
 
 (ert-deftest test-ecall ()
   "Tests that ECALL works."
@@ -691,9 +761,21 @@
   (should (equal (list '(OP-IMM ADDI 1 0 1)) (read-tmp-instruction "addi x1, x0, 1")))
   (should (equal (list '(OP-IMM ADDI 22 15 256)) (read-tmp-instruction "addi x22, x15, 256"))))
 
+(ert-deftest test-read-slti ()
+  "Tests that a set-less-than-immediate instruction can be read."
+  (should (equal (list '(OP-IMM SLTI 1 0 0)) (read-tmp-instruction "slti x1, x0, 0"))))
+
 (ert-deftest test-read-andi ()
   "Tests that an ANDI instruction can be read."
   (should (equal (list '(OP-IMM ANDI 1 1 5)) (read-tmp-instruction "andi x1, x1, 5"))))
+
+(ert-deftest test-read-ori ()
+  "Tests that an ORI instruction can be read."
+  (should (equal (list '(OP-IMM ORI 1 0 1)) (read-tmp-instruction "ori x1,x0,1"))))
+
+(ert-deftest test-read-xori ()
+  "Tests that an XORI instruction can be read."
+  (should (equal (list '(OP-IMM XORI 1 0 2)) (read-tmp-instruction "xori x1,x0,2"))))
 
 (ert-deftest test-read-ecall ()
   "Tests that an ECALL instruction can be read."
