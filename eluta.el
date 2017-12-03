@@ -1,4 +1,8 @@
 
+(defun get-xlen ()
+  "Get the length of the data registers in number of bits."
+  16)
+
 (defun get-instr-mem-load (instr-mem)
   "Get the instruction load function from an instruction info structure."
   (car instr-mem))
@@ -72,6 +76,22 @@
 (defun XORI (system-state dest src imm)
   "Implementation for XOR instruction with immediate value."
   (set-data-reg system-state dest (logxor (get-data-reg system-state src) imm)))
+
+(defun SLLI (system-state dest src imm)
+  "Implementation for shift-left-logical with immediate value."
+  (set-data-reg system-state dest (lsh (get-data-reg system-state src) imm)))
+
+(defun SRLI (system-state dest src imm)
+  "Implementation for shift-right-logical with immediate value."
+  (set-data-reg system-state dest (lsh (get-data-reg system-state src) (* imm -1))))
+
+(defun SRAI (system-state dest src imm)
+  "Implementation for shift-right-arithmetic with immediate value."
+  (set-data-reg system-state dest (logior (lsh (get-data-reg system-state src) (- imm))
+					  (if (/= 0 (logand (get-data-reg system-state src) (lsh (lognot 0) (- (get-xlen) 1))))
+					      (logand (lognot (lsh (lognot 0) (get-xlen)))
+						      (lsh (lognot 0) (- (get-xlen) imm)))
+					    0))))
 
 
 (defun JAL (args system-state)
@@ -180,6 +200,9 @@
     (puthash "andi" 'read-andi instr-hash)
     (puthash "ori" 'read-ori instr-hash)
     (puthash "xori" 'read-xori instr-hash)
+    (puthash "slli" 'read-slli instr-hash)
+    (puthash "srli" 'read-srli instr-hash)
+    (puthash "srai" 'read-srai instr-hash)
     (puthash "jal" 'read-jal instr-hash)
     (puthash "jalr" 'read-jalr instr-hash)
     (puthash "beq" 'read-beq instr-hash)
@@ -237,6 +260,18 @@
 (defun read-xori ()
   "Reads an XORI instruction from the current buffer."
   (read-int-imm 'XORI))
+
+(defun read-slli ()
+  "Reads an SLLI instruction from the current buffer."
+  (read-int-imm 'SLLI))
+
+(defun read-srli ()
+  "Reads an SRLI instruction from the current buffer."
+  (read-int-imm 'SRLI))
+
+(defun read-srai ()
+  "Reads an SRAI instruction from the current buffer."
+  (read-int-imm 'SRAI))
 
 (defun read-jal ()
   "Read a Jump and Link instruction from the current buffer."
@@ -548,6 +583,64 @@
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 6 (get-data-reg system-state 1)))))
 
+(ert-deftest test-slli ()
+  "Tests that shift-left-logical-immediate works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM SLLI 1 1 1) instr-mem-hash)
+    (set-data-reg system-state 1 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 2 (get-data-reg system-state 1))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM SLLI 1 1 2) instr-mem-hash)
+    (set-data-reg system-state 1 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 4 (get-data-reg system-state 1))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM SLLI 1 1 1) instr-mem-hash)
+    (set-data-reg system-state 1 2)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 4 (get-data-reg system-state 1)))))
+
+(ert-deftest test-srli ()
+  "Tests that shift-right-logical-immediate works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM SRLI 1 1 1) instr-mem-hash)
+    (set-data-reg system-state 1 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 0 (get-data-reg system-state 1))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM SRLI 1 1 1) instr-mem-hash)
+    (set-data-reg system-state 1 2)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (equal 1 (get-data-reg system-state 1)))))
+
+(ert-deftest test-srai ()
+  "Tests that shift-right-arithmetic-immediate works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM SRAI 1 1 1) instr-mem-hash)
+    (set-data-reg system-state 1 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (= 0 (get-data-reg system-state 1))))
+  (let ((system-state (make-zeroed-system-state))
+  	(instr-mem-hash (make-hash-table))
+  	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM SRAI 1 1 1) instr-mem-hash)
+    (set-data-reg system-state 1 (lsh 1 (- (get-xlen) 1)))
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (= (lsh 3 (- (get-xlen) 2)) (get-data-reg system-state 1)))))
+
 (ert-deftest test-ecall ()
   "Tests that ECALL works."
   (let ((system-state (make-zeroed-system-state))
@@ -776,6 +869,18 @@
 (ert-deftest test-read-xori ()
   "Tests that an XORI instruction can be read."
   (should (equal (list '(OP-IMM XORI 1 0 2)) (read-tmp-instruction "xori x1,x0,2"))))
+
+(ert-deftest test-read-slli ()
+  "Tests that an SLLI instruction can be read."
+  (should (equal (list '(OP-IMM SLLI 1 1 3)) (read-tmp-instruction "slli x1,x1,3"))))
+
+(ert-deftest test-read-srli ()
+  "Tests that an SRLI instruction can be read."
+  (should (equal (list '(OP-IMM SRLI 3 4 2)) (read-tmp-instruction "srli x3,x4,2"))))
+
+(ert-deftest test-read-srai ()
+  "Tests that an SRAI instruction can be read."
+  (should (equal (list '(OP-IMM SRAI 12 5 6)) (read-tmp-instruction "srai x12,x5,6"))))
 
 (ert-deftest test-read-ecall ()
   "Tests that an ECALL instruction can be read."
