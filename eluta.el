@@ -94,6 +94,15 @@
 					    0))))
 
 
+(defun LUI (args system-state)
+  "Implementation for load-upper with immediate value."
+  (set-data-reg system-state (car args) (nth 1 args)))
+
+(defun AUIPC (args system-state)
+  "Implementation for add-upper-to-pc with immediate value."
+  (set-data-reg system-state (car args) (+ (nth 1 args) (get-pc system-state))))
+
+
 (defun JAL (args system-state)
   "Implementation of Jump and Link instruction."
   (incr-pc system-state (nth 1 args))
@@ -203,6 +212,8 @@
     (puthash "slli" 'read-slli instr-hash)
     (puthash "srli" 'read-srli instr-hash)
     (puthash "srai" 'read-srai instr-hash)
+    (puthash "lui" 'read-lui instr-hash)
+    (puthash "auipc" 'read-auipc instr-hash)
     (puthash "jal" 'read-jal instr-hash)
     (puthash "jalr" 'read-jalr instr-hash)
     (puthash "beq" 'read-beq instr-hash)
@@ -272,6 +283,26 @@
 (defun read-srai ()
   "Reads an SRAI instruction from the current buffer."
   (read-int-imm 'SRAI))
+
+(defun read-lui ()
+  "Reads an load-upper-immediate instruction from the current buffer."
+  (forward-word)
+  (let ((dest-reg 0)
+	(offset 0))
+    (setq dest-reg (read-register (current-word)))
+    (forward-word)
+    (setq offset (string-to-number (current-word)))
+    (list 'LUI dest-reg offset)))
+
+(defun read-auipc ()
+  "Reads an add-upper-immediate-to-pc instruction from the current buffer."
+  (forward-word)
+  (let ((dest-reg 0)
+	(offset 0))
+    (setq dest-reg (read-register (current-word)))
+    (forward-word)
+    (setq offset (string-to-number (current-word)))
+    (list 'AUIPC dest-reg offset)))
 
 (defun read-jal ()
   "Read a Jump and Link instruction from the current buffer."
@@ -641,6 +672,31 @@
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (= (lsh 3 (- (get-xlen) 2)) (get-data-reg system-state 1)))))
 
+(ert-deftest test-lui ()
+  "Tests that load-upper-immediate works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 (list 'LUI 1 (lsh 1 12)) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (= (lsh 1 12) (get-data-reg system-state 1)))))
+
+(ert-deftest test-auipc ()
+  "Tests that add-upper-immediate-to-pc works."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 (list 'AUIPC 1 (lsh 1 12)) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (= (lsh 1 12) (get-data-reg system-state 1))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP-IMM ADDI 0 0 0) instr-mem-hash)
+    (puthash 4 (list 'AUIPC 1 (lsh 1 12)) instr-mem-hash)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (= (+ 4 (lsh 1 12)) (get-data-reg system-state 1)))))
+
 (ert-deftest test-ecall ()
   "Tests that ECALL works."
   (let ((system-state (make-zeroed-system-state))
@@ -881,6 +937,14 @@
 (ert-deftest test-read-srai ()
   "Tests that an SRAI instruction can be read."
   (should (equal (list '(OP-IMM SRAI 12 5 6)) (read-tmp-instruction "srai x12,x5,6"))))
+
+(ert-deftest test-read-lui ()
+  "Tests that a load-upper-immediate can be read."
+  (should (equal (list (list 'LUI 1 (lsh 1 12))) (read-tmp-instruction "lui x1,4096"))))
+
+(ert-deftest test-read-auipc ()
+  "Tests that a add-upper-immediate-to-pc can be read."
+  (should (equal (list (list 'AUIPC 1 (lsh 1 12))) (read-tmp-instruction "auipc x1,4096"))))
 
 (ert-deftest test-read-ecall ()
   "Tests that an ECALL instruction can be read."
