@@ -280,6 +280,15 @@
     (puthash "srai" 'read-srai instr-hash)
     (puthash "lui" 'read-lui instr-hash)
     (puthash "auipc" 'read-auipc instr-hash)
+    (puthash "add" 'read-add instr-hash)
+    (puthash "slt" 'read-slt instr-hash)
+    (puthash "and" 'read-and instr-hash)
+    (puthash "or" 'read-or instr-hash)
+    (puthash "xor" 'read-xor instr-hash)
+    (puthash "sll" 'read-sll instr-hash)
+    (puthash "srl" 'read-srl instr-hash)
+    (puthash "sra" 'read-sra instr-hash)
+    (puthash "sub" 'read-sub instr-hash)
     (puthash "jal" 'read-jal instr-hash)
     (puthash "jalr" 'read-jalr instr-hash)
     (puthash "beq" 'read-beq instr-hash)
@@ -369,6 +378,56 @@
     (forward-word)
     (setq offset (string-to-number (current-word)))
     (list 'AUIPC dest-reg offset)))
+
+(defun read-int (func-type)
+  "Reads an integer arithmetic instruction with register operands from the current buffer."
+  (forward-word)
+  (let ((op-type 'OP)
+	(dest-reg 0)
+	(src1-reg 0)
+	(src2-reg 0))
+    (setq dest-reg (read-register (current-word)))
+    (forward-word)
+    (setq src1-reg (read-register (current-word)))
+    (forward-word)
+    (setq src2-reg (read-register (current-word)))
+    (list op-type func-type dest-reg src1-reg src2-reg)))
+
+(defun read-add ()
+  "Read an addition instruction from the current buffer."
+  (read-int 'ADD))
+
+(defun read-slt ()
+  "Read a set-less-than instruction from the current buffer."
+  (read-int 'SLT))
+
+(defun read-and ()
+  "Read an AND instruction from the current buffer."
+  (read-int 'AND))
+
+(defun read-or ()
+  "Read an OR instruction from the current buffer."
+  (read-int 'OR))
+
+(defun read-xor ()
+  "Read an XOR instruction from the current buffer."
+  (read-int 'XOR))
+
+(defun read-sll ()
+  "Read an SLL instruction from the current buffer."
+  (read-int 'SLL))
+
+(defun read-srl ()
+  "Read an SRL instruction from the current buffer."
+  (read-int 'SRL))
+
+(defun read-sra ()
+  "Read an SRA instruction from the current buffer."
+  (read-int 'SRA))
+
+(defun read-sub ()
+  "Read a SUB instruction from the current buffer."
+  (read-int 'SUB))
 
 (defun read-jal ()
   "Read a Jump and Link instruction from the current buffer."
@@ -1092,6 +1151,42 @@
 (ert-deftest test-read-auipc ()
   "Tests that a add-upper-immediate-to-pc can be read."
   (should (equal (list (list 'AUIPC 1 (lsh 1 12))) (read-tmp-instruction "auipc x1,4096"))))
+
+(ert-deftest test-read-add ()
+  "Tests that an addition instruction can be read."
+  (should (equal (list '(OP ADD 1 0 0)) (read-tmp-instruction "add x1, x0, x0"))))
+
+(ert-deftest test-read-slt ()
+  "Tests that a set-less-than instruction can be read."
+  (should (equal (list '(OP SLT 1 2 3)) (read-tmp-instruction "slt x1, x2, x3"))))
+
+(ert-deftest test-read-and ()
+  "Tests that an AND instruction can be read."
+  (should (equal (list '(OP AND 3 1 2)) (read-tmp-instruction "and x3, x1, x2"))))
+
+(ert-deftest test-read-or ()
+  "Tests that an OR instruction can be read."
+  (should (equal (list '(OP OR 6 12 13)) (read-tmp-instruction "or x6, x12, x13"))))
+
+(ert-deftest test-read-xor ()
+  "Tests that an XOR instruction can be read."
+  (should (equal (list '(OP XOR 4 2 3)) (read-tmp-instruction "xor x4, x2, x3"))))
+
+(ert-deftest test-read-sll ()
+  "Tests that an SLL instruction can be read."
+  (should (equal (list '(OP SLL 2 4 3)) (read-tmp-instruction "sll x2, x4, x3"))))
+
+(ert-deftest test-read-srl ()
+  "Tests that an SRL instruction can be read."
+  (should (equal (list '(OP SRL 1 4 2)) (read-tmp-instruction "srl x1, x4, x2"))))
+
+(ert-deftest test-read-sra ()
+  "Tests that an SRA instruction can be read."
+  (should (equal (list '(OP SRA 6 4 5)) (read-tmp-instruction "sra x6,x4,x5"))))
+
+(ert-deftest test-read-sub ()
+  "Tests that a SUB instruction can be read."
+  (should (equal (list '(OP SUB 1 2 3)) (read-tmp-instruction "sub x1, x2, x3"))))
 
 (ert-deftest test-read-ecall ()
   "Tests that an ECALL instruction can be read."
