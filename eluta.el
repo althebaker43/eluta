@@ -53,17 +53,24 @@
 	(incr-pc system-state)))))
 
 
+(defun ADD-base (system-state dest op1 op2)
+  (set-data-reg system-state dest (+ op1 op2)))
+
+(defun SLT-base (system-state dest op1 op2)
+  (set-data-reg system-state dest (if (< op1 op2) 1 0)))
+
+
 (defun OP-IMM (args system-state)
   "Implementation for arithmetic instruction with immediate value."
   (apply (car args) system-state (cdr args)))
 
 (defun ADDI (system-state dest src imm)
   "Implementation for addition instruction with immediate value."
-  (set-data-reg system-state dest (+ (get-data-reg system-state src) imm)))
+  (ADD-base system-state dest (get-data-reg system-state src) imm))
 
 (defun SLTI (system-state dest src imm)
   "Implementation for set-less-than-immediate."
-  (set-data-reg system-state dest (if (< (get-data-reg system-state src) imm) 1 0)))
+  (SLT-base system-state dest (get-data-reg system-state src) imm))
 
 (defun ANDI (system-state dest src imm)
   "Implementation for AND instruction with immediate value."
@@ -101,6 +108,19 @@
 (defun AUIPC (args system-state)
   "Implementation for add-upper-to-pc with immediate value."
   (set-data-reg system-state (car args) (+ (nth 1 args) (get-pc system-state))))
+
+
+(defun OP (args system-state)
+  "Implementation for arithmetic instructions with register operands."
+  (apply (car args) system-state (cdr args)))
+
+(defun ADD (system-state dest src1 src2)
+  "Implementation for addition with register operands."
+  (ADD-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
+
+(defun SLT (system-state dest src1 src2)
+  "Implementation of Set-Less-Than with register operands."
+  (SLT-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
 
 
 (defun JAL (args system-state)
@@ -536,35 +556,55 @@
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 4 (get-pc system-state)))))
 
-(ert-deftest test-addi ()
-  "Tests that ADDI works."
+(defun prepare-op (func-info system-state instr-mem-hash immp src2-val src2-loc func)
+  (if immp
+      (puthash 0 (append '(OP-IMM) (list func) func-info (list src2-val)) instr-mem-hash)
+    (puthash 0 (append '(OP) (list func) func-info (list src2-loc)) instr-mem-hash)
+    (set-data-reg system-state src2-loc src2-val)))
+
+(defun test-add-base (immp func)
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM ADDI 1 0 4) instr-mem-hash)
+    (prepare-op '(1 0) system-state instr-mem-hash immp 4 2 func)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 4 (get-data-reg system-state 1))))
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM ADDI 2 0 8) instr-mem-hash)
+    (prepare-op '(2 0) system-state instr-mem-hash immp 8 3 func)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 8 (get-data-reg system-state 2)))))
 
-(ert-deftest test-slti ()
-  "Tests that Set-Less-Than-Immediate works."
+(ert-deftest test-addi ()
+  "Tests that ADDI works."
+  (test-add-base t 'ADDI))
+
+(ert-deftest test-add ()
+  "Tests that ADD works."
+  (test-add-base nil 'ADD))
+
+(defun test-slt-base (immp func)
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM SLTI 1 0 0) instr-mem-hash)
+    (prepare-op '(1 0) system-state instr-mem-hash immp 0 2 func)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 0 (get-data-reg system-state 1))))
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM SLTI 1 0 1) instr-mem-hash)
+    (prepare-op '(1 0) system-state instr-mem-hash immp 1 2 func)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 1 (get-data-reg system-state 1)))))
+
+(ert-deftest test-slti ()
+  "Tests that Set-Less-Than-Immediate works."
+  (test-slt-base t 'SLTI))
+
+(ert-deftest test-slt ()
+  "Tests that Set-Less-Than with register operands works."
+  (test-slt-base nil 'SLT))
 
 (ert-deftest test-andi ()
   "Tests that ANDI works."
