@@ -59,6 +59,28 @@
 (defun SLT-base (system-state dest op1 op2)
   (set-data-reg system-state dest (if (< op1 op2) 1 0)))
 
+(defun AND-base (system-state dest op1 op2)
+  (set-data-reg system-state dest (logand op1 op2)))
+
+(defun OR-base (system-state dest op1 op2)
+  (set-data-reg system-state dest (logior op1 op2)))
+
+(defun XOR-base (system-state dest op1 op2)
+  (set-data-reg system-state dest (logxor op1 op2)))
+
+(defun SLL-base (system-state dest op1 op2)
+  (set-data-reg system-state dest (lsh op1 op2)))
+
+(defun SRL-base (system-state dest op1 op2)
+  (set-data-reg system-state dest (lsh op1 (* op2 -1))))
+
+(defun SRA-base (system-state dest op1 op2)
+  (set-data-reg system-state dest (logior (lsh op1 (- op2))
+					  (if (/= 0 (logand op1 (lsh (lognot 0) (- (get-xlen) 1))))
+					      (logand (lognot (lsh (lognot 0) (get-xlen)))
+						      (lsh (lognot 0) (- (get-xlen) op2)))
+					    0))))
+
 
 (defun OP-IMM (args system-state)
   "Implementation for arithmetic instruction with immediate value."
@@ -74,31 +96,27 @@
 
 (defun ANDI (system-state dest src imm)
   "Implementation for AND instruction with immediate value."
-  (set-data-reg system-state dest (logand (get-data-reg system-state src) imm)))
+  (AND-base system-state dest (get-data-reg system-state src) imm))
 
 (defun ORI (system-state dest src imm)
   "Implementation for OR instruction with immediate value."
-  (set-data-reg system-state dest (logior (get-data-reg system-state src) imm)))
+  (OR-base system-state dest (get-data-reg system-state src) imm))
 
 (defun XORI (system-state dest src imm)
   "Implementation for XOR instruction with immediate value."
-  (set-data-reg system-state dest (logxor (get-data-reg system-state src) imm)))
+  (XOR-base system-state dest (get-data-reg system-state src) imm))
 
 (defun SLLI (system-state dest src imm)
   "Implementation for shift-left-logical with immediate value."
-  (set-data-reg system-state dest (lsh (get-data-reg system-state src) imm)))
+  (SLL-base system-state dest (get-data-reg system-state src) imm))
 
 (defun SRLI (system-state dest src imm)
   "Implementation for shift-right-logical with immediate value."
-  (set-data-reg system-state dest (lsh (get-data-reg system-state src) (* imm -1))))
+  (SRL-base system-state dest (get-data-reg system-state src) imm))
 
 (defun SRAI (system-state dest src imm)
   "Implementation for shift-right-arithmetic with immediate value."
-  (set-data-reg system-state dest (logior (lsh (get-data-reg system-state src) (- imm))
-					  (if (/= 0 (logand (get-data-reg system-state src) (lsh (lognot 0) (- (get-xlen) 1))))
-					      (logand (lognot (lsh (lognot 0) (get-xlen)))
-						      (lsh (lognot 0) (- (get-xlen) imm)))
-					    0))))
+  (SRA-base system-state dest (get-data-reg system-state src) imm))
 
 
 (defun LUI (args system-state)
@@ -122,6 +140,29 @@
   "Implementation of Set-Less-Than with register operands."
   (SLT-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
 
+(defun AND (system-state dest src1 src2)
+  "Implementation of AND with register operands."
+  (AND-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
+
+(defun OR (system-state dest src1 src2)
+  "Implementation of OR with register operands."
+  (OR-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
+
+(defun XOR (system-state dest src1 src2)
+  "Implementation of XOR with register operands."
+  (XOR-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
+
+(defun SLL (system-state dest src1 src2)
+  "Implementation of shift-left-logical with register operands."
+  (SLL-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
+
+(defun SRL (system-state dest src1 src2)
+  "Implementation of shift-right-logical with register operands."
+  (SRL-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
+
+(defun SRA (system-state dest src1 src2)
+  "Implementation of shift-right-arithmetic with register operands."
+  (SRA-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
 
 (defun JAL (args system-state)
   "Implementation of Jump and Link instruction."
@@ -606,111 +647,154 @@
   "Tests that Set-Less-Than with register operands works."
   (test-slt-base nil 'SLT))
 
-(ert-deftest test-andi ()
-  "Tests that ANDI works."
+(defun test-and-base (immp func)
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM ANDI 1 0 0) instr-mem-hash)
+    (prepare-op '(1 0) system-state instr-mem-hash immp 0 2 func)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 0 (get-data-reg system-state 1))))
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM ANDI 1 1 4) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 4 2 func)
     (set-data-reg system-state 1 5)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 4 (get-data-reg system-state 1)))))
 
-(ert-deftest test-ori ()
-  "Tests that ORI works."
+(ert-deftest test-andi ()
+  "Tests that ANDI works."
+  (test-and-base t 'ANDI))
+
+(ert-deftest test-and ()
+  "Tests that AND works."
+  (test-and-base nil 'AND))
+
+(defun test-or-base (immp func)
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM ORI 1 0 0) instr-mem-hash)
+    (prepare-op '(1 0) system-state instr-mem-hash immp 0 2 func)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 0 (get-data-reg system-state 1))))
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM ORI 1 0 1) instr-mem-hash)
+    (prepare-op '(1 0) system-state instr-mem-hash immp 1 2 func)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 1 (get-data-reg system-state 1))))
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM ORI 1 1 3) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 3 2 func)
     (set-data-reg system-state 1 5)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 7 (get-data-reg system-state 1)))))
+  
+(ert-deftest test-ori ()
+  "Tests that ORI works."
+  (test-or-base t 'ORI))
 
-(ert-deftest test-xori ()
-  "Tests that XORI works."
+(ert-deftest test-or ()
+  "Tests that OR works."
+  (test-or-base nil 'OR))
+
+(defun test-xor-base (immp func)
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM XORI 1 1 3) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 3 2 func)
     (set-data-reg system-state 1 5)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 6 (get-data-reg system-state 1)))))
 
-(ert-deftest test-slli ()
-  "Tests that shift-left-logical-immediate works."
+(ert-deftest test-xori ()
+  "Tests that XORI works."
+  (test-xor-base t 'XORI))
+
+(ert-deftest test-xor ()
+  "Tests that XOR works."
+  (test-xor-base nil 'XOR))
+
+(defun test-sll-base (immp func)
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM SLLI 1 1 1) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 1 2 func)
     (set-data-reg system-state 1 1)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 2 (get-data-reg system-state 1))))
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM SLLI 1 1 2) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 2 2 func)
     (set-data-reg system-state 1 1)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 4 (get-data-reg system-state 1))))
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM SLLI 1 1 1) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 1 2 func)
     (set-data-reg system-state 1 2)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 4 (get-data-reg system-state 1)))))
 
-(ert-deftest test-srli ()
-  "Tests that shift-right-logical-immediate works."
+(ert-deftest test-slli ()
+  "Tests that shift-left-logical-immediate works."
+  (test-sll-base t 'SLLI))
+
+(ert-deftest test-sll ()
+  "Tests that shift-left-logical with register operands works."
+  (test-sll-base nil 'SLL))
+
+(defun test-srl-base (immp func)
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM SRLI 1 1 1) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 1 2 func)
     (set-data-reg system-state 1 1)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 0 (get-data-reg system-state 1))))
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM SRLI 1 1 1) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 1 2 func)
     (set-data-reg system-state 1 2)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (equal 1 (get-data-reg system-state 1)))))
 
-(ert-deftest test-srai ()
-  "Tests that shift-right-arithmetic-immediate works."
+(ert-deftest test-srli ()
+  "Tests that shift-right-logical-immediate works."
+  (test-srl-base t 'SRLI))
+
+(ert-deftest test-srl ()
+  "Tests that shift-right-logical with register operands works."
+  (test-srl-base nil 'SRL))
+
+(defun test-sra-base (immp func)
   (let ((system-state (make-zeroed-system-state))
 	(instr-mem-hash (make-hash-table))
 	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM SRAI 1 1 1) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 1 2 func)
     (set-data-reg system-state 1 1)
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (= 0 (get-data-reg system-state 1))))
   (let ((system-state (make-zeroed-system-state))
   	(instr-mem-hash (make-hash-table))
   	(data-mem-hash (make-hash-table)))
-    (puthash 0 '(OP-IMM SRAI 1 1 1) instr-mem-hash)
+    (prepare-op '(1 1) system-state instr-mem-hash immp 1 2 func)
     (set-data-reg system-state 1 (lsh 1 (- (get-xlen) 1)))
     (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
     (should (= (lsh 3 (- (get-xlen) 2)) (get-data-reg system-state 1)))))
+
+(ert-deftest test-srai ()
+  "Tests that shift-right-arithmetic-immediate works."
+  (test-sra-base t 'SRAI))
+
+(ert-deftest test-sra ()
+  "Tests that shift-right-arithmetic with immediate works."
+  (test-sra-base nil 'SRA))
+
 
 (ert-deftest test-lui ()
   "Tests that load-upper-immediate works."
