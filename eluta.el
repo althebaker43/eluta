@@ -164,6 +164,11 @@
   "Implementation of shift-right-arithmetic with register operands."
   (SRA-base system-state dest (get-data-reg system-state src1) (get-data-reg system-state src2)))
 
+(defun SUB (system-state dest src1 src2)
+  "Implementation of subtraction with register operands."
+  (set-data-reg system-state dest (- (get-data-reg system-state src1) (get-data-reg system-state src2))))
+
+
 (defun JAL (args system-state)
   "Implementation of Jump and Link instruction."
   (incr-pc system-state (nth 1 args))
@@ -792,8 +797,26 @@
   (test-sra-base t 'SRAI))
 
 (ert-deftest test-sra ()
-  "Tests that shift-right-arithmetic with immediate works."
+  "Tests that shift-right-arithmetic with register operands works."
   (test-sra-base nil 'SRA))
+
+(ert-deftest test-sub ()
+  "Tests that subtraction with register operands."
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP SUB 1 0 2) instr-mem-hash)
+    (set-data-reg system-state 2 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (= -1 (get-data-reg system-state 1))))
+  (let ((system-state (make-zeroed-system-state))
+	(instr-mem-hash (make-hash-table))
+	(data-mem-hash (make-hash-table)))
+    (puthash 0 '(OP SUB 1 3 2) instr-mem-hash)
+    (set-data-reg system-state 3 1)
+    (set-data-reg system-state 2 1)
+    (simulate system-state (list 'gethash instr-mem-hash) (list 'gethash 'puthash data-mem-hash))
+    (should (= 0 (get-data-reg system-state 1)))))
 
 
 (ert-deftest test-lui ()
